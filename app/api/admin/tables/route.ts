@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { requireAuthUser } from "@/lib/auth-route";
+import { requireAdminUser, unauthorized } from "@/lib/auth-route";
 
 /**
  * Admin CRUD meja (service role — bypass RLS).
@@ -8,7 +8,7 @@ import { requireAuthUser } from "@/lib/auth-route";
  * POST → buat meja baru dengan qr_token unik otomatis
  */
 export async function GET(request: NextRequest) {
-  const user = await requireAuthUser(request);
+  const user = await requireAdminUser(request);
   if (!user) {
     return Response.json(
       { error: "Akses ditolak — harus login admin" },

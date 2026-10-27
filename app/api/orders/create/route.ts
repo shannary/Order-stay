@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 type SubmittedItem = {
   menuItemId: string;
@@ -11,6 +12,10 @@ type OrderPayload = {
   items: SubmittedItem[];
   paymentMethod: string; // "cash" | "qris"
 };
+
+// Batas aman payload (server-side; klaim nilai UI tidak dipercaya)
+const MAX_ITEMS_PER_ORDER = 30;
+const MAX_QTY_PER_ITEM = 10;
 
 /**
  * POST /api/orders/create
@@ -29,13 +34,26 @@ export async function POST(request: NextRequest) {
       if (
         !item.menuItemId ||
         !Number.isInteger(item.quantity) ||
-        item.quantity < 1
+        item.quantity < 1 ||
+        item.quantity > MAX_QTY_PER_ITEM
       ) {
         return NextResponse.json(
-          { error: "Item keranjang tidak valid" },
+          { error: `Kuantitas per item maksimal ${MAX_QTY_PER_ITEM}` },
           { status: 400 }
         );
       }
+      if (typeof item.notes === "string" && item.notes.length > 140) {
+        return NextResponse.json(
+          { error: "Catatan terlalu panjang" },
+          { status: 400 }
+        );
+      }
+    }
+    if (body.items.length > MAX_ITEMS_PER_ORDER) {
+      return NextResponse.json(
+        { error: `Maksimal ${MAX_ITEMS_PER_ORDER} jenis item per pesanan` },
+        { status: 400 }
+      );
     }
 
     const paymentMethod = ["cash", "qris"].includes(body.paymentMethod)
@@ -49,10 +67,18 @@ export async function POST(request: NextRequest) {
     }
 
     const tableId = request.cookies.get("table_id")?.value;
-    if (!tableId) {
+    if (!tableId || !/^[0-9a-f-]{36}$/i.test(tableId)) {
       return NextResponse.json(
         { error: "Sesi meja tidak ditemukan, silakan scan ulang QR" },
         { status: 401 }
+      );
+    }
+
+    // Rate limit per meja: maks 5 pesanan / 10 menit (pelanggan wajar)
+    if (!rateLimit(`order-create:${tableId}`, 5, 10 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "Terlalu banyak pesanan — tunggu beberapa saat atau hubungi barista" },
+        { status: 429 }
       );
     }
 

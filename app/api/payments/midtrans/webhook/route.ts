@@ -62,9 +62,36 @@ export async function POST(request: NextRequest) {
       payload.transaction_status === "settlement" ||
       payload.transaction_status === "capture";
 
-    // 2. Update hanya pesanan yang masih pending (idempotent)
+    // 2. Anti-tamper: nominal webhook HARUS sama dengan total order DB
     if (paid) {
       const supabase = getSupabaseServerClient();
+      const { data: order } = await supabase
+        .from("orders")
+        .select("total_amount, payment_status")
+        .eq("id", payload.order_id)
+        .maybeSingle();
+
+      if (!order) {
+        return NextResponse.json(
+          { error: "Pesanan tidak ditemukan" },
+          { status: 404 }
+        );
+      }
+      const claimed = Math.round(Number(payload.gross_amount));
+      if (Number.isNaN(claimed) || claimed !== (order as any).total_amount) {
+        // Nominal beda → jangan MENGHARGAI sudah dilakukan; tolak keras
+        console.error(
+          "[midtrans webhook] gross_amount mismatch",
+          payload.order_id,
+          claimed,
+          (order as any).total_amount
+        );
+        return NextResponse.json(
+          { error: "Nominal pembayaran tidak sesuai" },
+          { status: 400 }
+        );
+      }
+
       const { error: updateError } = await supabase
         .from("orders")
         .update({
@@ -78,7 +105,6 @@ export async function POST(request: NextRequest) {
 
       if (updateError) {
         console.error("[midtrans webhook] update gagal", updateError);
-        // 500 supaya Midtrans memasukkan ke antrean retry
         return NextResponse.json(
           { error: "Gagal memperbarui pesanan" },
           { status: 500 }

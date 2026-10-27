@@ -6,7 +6,7 @@ import { Banknote, CheckCheck, Loader2, QrCode, RefreshCw } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
 import { formatRupiah } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { orderStatusMeta, paymentStatusMeta } from "@/lib/status-map";
+import { orderStatusMeta } from "@/lib/status-map";
 import { cn } from "@/lib/utils";
 
 type PendingOrder = {
@@ -17,33 +17,37 @@ type PendingOrder = {
   payment_method: string;
   created_at: string;
   tables: { number: number } | null;
-  order_items_count?: number; // dihitung terpisah
 };
 
 export function PosClient() {
   const [orders, setOrders] = useState<PendingOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
-  const channelRef = useRef<ReturnType<
-    ReturnType<typeof getSupabaseClient>["channel"]
-  > | null>(null);
+  const knownIdsRef = useRef<Set<string>>(new Set());
 
   const refetch = useCallback(async () => {
     setLoading(true);
-    const supabase = getSupabaseClient();
-    const { data } = await supabase
-      .from("orders")
-      .select(
-        "id, order_number, status, total_amount, payment_method, created_at, tables(number)"
-      )
-      .eq("payment_status", "pending")
-      .order("created_at", { ascending: true })
-      .limit(50);
+    try {
+      const res = await fetch("/api/admin/orders?queue=pending");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal memuat");
+      const list = (data.orders ?? []) as PendingOrder[];
 
-    setOrders(
-      (data ?? []) as unknown as PendingOrder[]
-    );
-    setLoading(false);
+      // Deteksi pesanan baru untuk toast realtime (payload anon bisa
+      // ter-filter RLS, jadi identifikasi dari hasil refetch server).
+      const fresh = list.filter((o) => !knownIdsRef.current.has(o.id));
+      for (const o of fresh) {
+        if (knownIdsRef.current.size > 0) {
+          toast.info(`Pesanan baru ${o.order_number}`);
+        }
+      }
+      knownIdsRef.current = new Set(list.map((o) => o.id));
+      setOrders(list);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal memuat");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   // 1. Muat daftar pending pertama kali
@@ -51,31 +55,24 @@ export function PosClient() {
     void refetch();
   }, [refetch]);
 
-  // 2. Realtime: INSERT & UPDATE di tabel orders
+  // 2. Realtime: pemicu refetch — data baca tetap lewat API server
   useEffect(() => {
     const supabase = getSupabaseClient();
-
     const channel = supabase
       .channel("pos-orders")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
-        ({ eventType, new: row }) => {
+        () => {
           void refetch();
-          if (eventType === "INSERT" && row) {
-            toast.info(
-              `Pesanan baru ${(row as Record<string, unknown>).order_number}`
-            );
-          }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         if (status === "SUBSCRIBED") {
           console.log("[POS] realtime aktif");
         }
       });
 
-    channelRef.current = channel;
     return () => {
       void supabase.removeChannel(channel);
     };

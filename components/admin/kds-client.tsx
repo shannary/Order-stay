@@ -40,23 +40,18 @@ export function KdsClient() {
 
   const refetch = useCallback(async () => {
     setLoading(true);
-    const supabase = getSupabaseClient();
-
-    // KDS HANYA menampilkan pesanan yang sudah LUNAS (payment_status='paid')
-    // dan belum completed — pesanan tunai baru masuk setelah kasir konfirmasi,
-    // sementara pesanan QRIS masuk otomatis lewat webhook Midtrans.
-    const { data } = await supabase
-      .from("orders")
-      .select(
-        "id, order_number, status, total_amount, created_at, tables(number), order_items(item_name, quantity, unit_price, notes)"
-      )
-      .eq("payment_status", "paid")
-      .in("status", ["received", "cooking", "served"])
-      .order("created_at", { ascending: true })
-      .limit(50);
-
-    setOrders((data ?? []) as unknown as KitchenOrder[]);
-    setLoading(false);
+    try {
+      // Antrean dapur dibaca via API server (service role) —
+      // anon tidak lagi diizinkan membaca semua orders (RLS ketat).
+      const res = await fetch("/api/admin/orders?queue=kitchen");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal memuat antrean");
+      setOrders((data.orders ?? []) as unknown as KitchenOrder[]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal memuat antrean");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

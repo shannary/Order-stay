@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { requireAuthUser } from "@/lib/auth-route";
+import { requireAdminUser, unauthorized } from "@/lib/auth-route";
 
 /**
  * Konfirmasi pembayaran tunai oleh kasir.
@@ -12,7 +12,7 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
 ) {
-  const user = await requireAuthUser(_request);
+  const user = await requireAdminUser(_request);
   if (!user) {
     return Response.json(
       { error: "Akses ditolak — kredensial kasir tidak valid" },
