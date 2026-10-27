@@ -7,11 +7,10 @@ import {
   ScanLine,
   ShoppingBag,
   Banknote,
-  QrCode,
   UtensilsCrossed,
   Sparkles,
-  ArrowDownRight,
   ArrowRight,
+  LogIn,
 } from "lucide-react";
 import { CAFE_NAME, CAFE_TAGLINE } from "@/lib/config";
 
@@ -72,159 +71,95 @@ export function Landing() {
             {CAFE_NAME}
           </span>
         </div>
-        <nav className="hidden items-center gap-7 text-sm text-zinc-600 md:flex">
-          <a href="#fitur" className="transition-colors hover:text-[#18181B]">Fitur</a>
-          <a href="#menu" className="transition-colors hover:text-[#18181B]">Menu</a>
-        </nav>
         <a
-          href="/table/meja-1"
-          className="flex items-center gap-1.5 rounded-full bg-[#18181B] px-4 py-2 text-sm font-semibold text-[#FBFBFA] transition-transform hover:scale-[1.03] active:scale-95"
+          href="/admin/login"
+          className="flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#18181B] shadow-sm ring-1 ring-zinc-200 transition-transform hover:scale-[1.03] active:scale-95"
         >
-          Mulai Pesan
-          <ArrowRight className="size-4" aria-hidden />
+          <LogIn className="size-3.5" aria-hidden />
+          Login
         </a>
       </header>
 
-      {/* ============ HERO ============ */}
-      <section className="relative mx-auto max-w-6xl px-6 pb-20 pt-10 md:pt-16">
+      {/* ============ HERO (MOBILE-FIRST) ============ */}
+      <section className="relative mx-auto max-w-md px-6 pb-16 pt-6 text-center">
         {/* blob dekoratif */}
-        <div aria-hidden className="pointer-events-none absolute -left-24 top-10 size-72 rounded-full bg-[#4A5D4E]/15 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -right-20 top-40 size-64 rounded-full bg-amber-200/40 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -left-20 top-16 size-64 rounded-full bg-[#4A5D4E]/15 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -right-16 top-44 size-48 rounded-full bg-amber-200/40 blur-3xl" />
 
-        <div className="relative grid items-center gap-12 md:grid-cols-2">
-          <div>
-            <motion.div
-              variants={fadeUp}
-              initial="hidden"
-              animate="show"
-              transition={{ duration: 0.5 }}
-              className="mb-5 inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-[#4A5D4E] shadow-sm ring-1 ring-zinc-200"
-            >
-              <Sparkles className="size-3.5" aria-hidden />
-              {CAFE_TAGLINE}
-            </motion.div>
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          animate="show"
+          transition={{ duration: 0.5 }}
+          className="mb-4 inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-[#4A5D4E] shadow-sm ring-1 ring-zinc-200"
+        >
+          <Sparkles className="size-3.5" aria-hidden />
+          {CAFE_TAGLINE}
+        </motion.div>
 
-            <motion.h1
-              variants={fadeUp}
-              initial="hidden"
-              animate="show"
-              transition={{ duration: 0.55, delay: 0.06 }}
-              className="text-5xl font-black leading-[1.04] tracking-tight md:text-6xl"
-            >
-              Kopi terbaik,
-              <br />
-              <span className="bg-gradient-to-r from-[#4A5D4E] via-[#6B7F71] to-amber-700 bg-clip-text text-transparent">
-                pesan dari meja.
-              </span>
-            </motion.h1>
+        <motion.h1
+          variants={fadeUp}
+          initial="hidden"
+          animate="show"
+          transition={{ duration: 0.55, delay: 0.06 }}
+          className="text-4xl font-black leading-[1.08] tracking-tight"
+        >
+          Selamat datang di{" "}
+          <span className="bg-gradient-to-r from-[#4A5D4E] via-[#6B7F71] to-amber-700 bg-clip-text text-transparent">
+            {CAFE_NAME}
+          </span>
+        </motion.h1>
 
-            <motion.p
-              variants={fadeUp}
-              initial="hidden"
-              animate="show"
-              transition={{ duration: 0.55, delay: 0.12 }}
-              className="mt-5 max-w-md text-base leading-relaxed text-zinc-600"
-            >
-              {CAFE_NAME} membawa pengalaman cafe premium ke QR code — tanpa antre,
-              tanpa salah meja. Scan, pilih, dan biarkan kopi kita menemukanmu.
-            </motion.p>
+        <motion.p
+          variants={fadeUp}
+          initial="hidden"
+          animate="show"
+          transition={{ duration: 0.55, delay: 0.12 }}
+          className="mx-auto mt-3 max-w-xs text-sm leading-relaxed text-zinc-600"
+        >
+          Scan QR di meja, pesan dari ponselmu, dan biarkan kopi yang menemukanmu.
+        </motion.p>
 
-            <motion.div
-              variants={fadeUp}
-              initial="hidden"
-              animate="show"
-              transition={{ duration: 0.55, delay: 0.18 }}
-              className="mt-8 flex flex-wrap items-center gap-3"
-            >
-              <a
-                href="/admin/login"
-                className="flex items-center gap-2 rounded-full bg-[#4A5D4E] px-6 py-3 text-sm font-semibold text-[#FBFBFA] shadow-lg shadow-[#4A5D4E]/25 transition-transform hover:scale-[1.03] active:scale-95"
-              >
-                <QrCode className="size-4" aria-hidden />
-                Login Kasir & Dapur
-              </a>
-              <a
-                href="#fitur"
-                className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600 transition-colors hover:text-[#18181B]"
-              >
-                Pelajari alur
-                <ArrowDownRight className="size-4" aria-hidden />
-              </a>
-            </motion.div>
-          </div>
+        {/* ===== TOMBOL QR SCAN BESAR DI TENGAH ===== */}
+        <motion.a
+          href="/table/meja-1"
+          initial={{ scale: 0.85, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 16 }}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.94 }}
+          aria-label="Scan QR untuk mulai pesan"
+          className="group relative mx-auto mt-10 flex size-56 items-center justify-center rounded-full bg-[#4A5D4E] shadow-2xl shadow-[#4A5D4E]/30 ring-8 ring-[#4A5D4E]/10"
+        >
+          {/* halo berdenyut */}
+          <span
+            aria-hidden
+            className="absolute inset-0 animate-ping rounded-full bg-[#4A5D4E]/20 [animation-duration:2.5s]"
+          />
+          <span className="relative flex flex-col items-center gap-2">
+            <ScanLine className="size-16 text-[#FBFBFA] transition-transform duration-300 group-hover:scale-110" aria-hidden />
+            <span className="text-sm font-bold text-[#FBFBFA]">
+              Scan QR Meja
+            </span>
+            <span className="text-[10px] text-[#FBFBFA]/70">
+              mulai pesan di sini
+            </span>
+          </span>
+        </motion.a>
 
-          {/* mock kartu meja melayang */}
-          <div className="relative mx-auto w-full max-w-xs">
-            <motion.div
-              initial={{ opacity: 0, y: 40, rotate: 3 }}
-              animate={{ opacity: 1, y: 0, rotate: 0 }}
-              transition={{ duration: 0.7, delay: 0.2, ease: "easeOut" }}
-              className="rounded-3xl bg-white p-5 shadow-2xl shadow-zinc-900/10 ring-1 ring-zinc-200"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-bold">{CAFE_NAME}</span>
-                <span className="rounded-full bg-[#4A5D4E]/10 px-2.5 py-1 text-[10px] font-bold text-[#4A5D4E]">
-                  MEJA 07
-                </span>
-              </div>
-              <div className="mt-4 space-y-3">
-                {[0, 1, 2].map((i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: 14 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.4 + i * 0.13 }}
-                    className="flex items-center gap-3 rounded-2xl bg-[#FBFBFA] p-2.5 ring-1 ring-zinc-100"
-                  >
-                    <span className="grid size-10 place-items-center rounded-xl bg-zinc-100 text-lg">
-                      {MENU_HIGHLIGHTS[i]?.emoji}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold">
-                        {MENU_HIGHLIGHTS[i]?.name}
-                      </p>
-                      <p className="text-[10px] text-zinc-500">
-                        {MENU_HIGHLIGHTS[i]?.note}
-                      </p>
-                    </div>
-                    <span className="ml-auto grid size-7 place-items-center rounded-full bg-[#4A5D4E] text-[#FBFBFA]">
-                      +
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-              <div className="mt-4 rounded-2xl bg-[#18181B] p-3.5">
-                <p className="flex items-center justify-between text-[10px] text-zinc-400">
-                  <span>3 item</span>
-                  <span>Subtotal</span>
-                </p>
-                <p className="mt-0.5 flex items-center justify-between text-sm font-bold text-[#FBFBFA]">
-                  <span>Rp 52.000</span>
-                  <span className="flex items-center gap-1">
-                    Checkout
-                    <ArrowRight className="size-3.5" aria-hidden />
-                  </span>
-                </p>
-              </div>
-            </motion.div>
-
-            {/* chip mengambang */}
-            <motion.span
-              animate={{ y: [0, -8, 0] }}
-              transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-              className="absolute -right-4 top-24 hidden rounded-full bg-white px-3.5 py-2 text-[11px] font-bold text-[#18181B] shadow-lg ring-1 ring-zinc-200 md:block"
-            >
-              🔥 Pesanan #ORD-… dimasak
-            </motion.span>
-            <motion.span
-              animate={{ y: [0, 8, 0] }}
-              transition={{ repeat: Infinity, duration: 5, ease: "easeInOut", delay: 0.8 }}
-              className="absolute -left-6 bottom-16 hidden rounded-full bg-[#4A5D4E] px-3.5 py-2 text-[11px] font-bold text-[#FBFBFA] shadow-lg md:block"
-            >
-              ✅ Lunas — selesai siap sajian
-            </motion.span>
-          </div>
-        </div>
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          animate="show"
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="mx-auto mt-8 max-w-xs rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-zinc-200"
+        >
+          <p className="text-xs font-bold text-[#18181B]">Belum di meja?</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">
+            Datang ke kasir atau pilih meja favorit, scan QR yang terdempel
+            menggelar di meja — katalog menu otomatis terbuka di ponsel yang sama.
+          </p>
+        </motion.div>
       </section>
 
       {/* ============ FITUR ============ */}
