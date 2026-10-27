@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { CAFE_NAME } from "@/lib/config";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "sonner";
+import { CAFE_NAME } from "@/lib/config";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,18 +16,18 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: CAFE_NAME,
-  description: "QR Self-Order tanpa antre",
+  description: "Pesan lewat QR, tanpa antre — sistem self-order kafe.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
+      lang="id"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Toaster position="top-center" />
+        <Toaster richColors position="top-center" />
       </body>
     </html>
   );

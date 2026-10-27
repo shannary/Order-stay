@@ -1,82 +1,82 @@
 import { createServerClient } from "@supabase/ssr";
-import { type NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+export type LoginResult = { ok: true } | { ok: false; status: number; error: string; hint?: string };
 
 /**
- * POST /api/admin/login  { email, password }
- * Login dilakukan SERVER-SIDE (bukan SDK client) supaya:
- *  - session cookie di-set oleh server → proxy.ts langsung valid
- *  - tidak ada ambiguitas Cache Components/SSR pada client SDK
- *  - whitelist ADMIN_EMAILS ditegakkan di awal (fail-closed)
+ * Proses login admin (server-side).
+ * Dipanggil dari route handler /api/admin/login.
+ * TIDAK PERNAH melempar exception — selalu mengembalikan LoginResult.
  */
-export async function handleLogin(request: NextRequest, response: NextResponse) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
-    return NextResponse.json(
-      { error: "Konfigurasi Supabase belum lengkap di server" },
-      { status: 500 }
-    );
-  }
-
-  const whitelist = (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (whitelist.length === 0) {
-    return NextResponse.json(
-      { error: "ADMIN_EMAILS belum disetel — login admin dinonaktifkan" },
-      { status: 503 }
-    );
-  }
-
-  let body: { email?: string; password?: string };
+export async function attemptLogin(
+  emailRaw: string,
+  password: string
+): Promise<LoginResult> {
+  const dev = process.env.NODE_ENV !== "production";
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Payload tidak valid" }, { status: 400 });
-  }
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) {
+      return {
+        ok: false,
+        status: 500,
+        error: "Konfigurasi Supabase belum lengkap di server",
+        hint: dev
+          ? "Isi NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY di .env.local, lalu restart server."
+          : undefined,
+      };
+    }
 
-  const email = (body.email ?? "").trim().toLowerCase();
-  const password = body.password ?? "";
-  if (!email || !password) {
-    return NextResponse.json(
-      { error: "Email dan kata sandi wajib diisi" },
-      { status: 400 }
-    );
-  }
+    const whitelist = (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    if (whitelist.length === 0) {
+      return {
+        ok: false,
+        status: 503,
+        error: "Login admin nonaktif — ADMIN_EMAILS belum disetel",
+        hint: dev
+          ? 'Tambah di .env.local baris: ADMIN_EMAILS=youradmin@yourcafe.id — email harus SAMA dengan user Supabase Auth, lalu restart.'
+          : undefined,
+      };
+    }
 
-  const supabase = createServerClient(url, anonKey, {
-    cookies: {
-      getAll: () => request.cookies.getAll(),
-      setAll: (cookies) => {
-        for (const { name, value, options } of cookies) {
-          response.cookies.set(name, value, options);
-        }
+    const cookieStore = await cookies();
+    const supabase = createServerClient(url, anonKey, {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookies) => {
+          for (const { name, value, options } of cookies) {
+            cookieStore.set(name, value, options);
+          }
+        },
       },
-    },
-  });
+    });
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: emailRaw.trim().toLowerCase(),
+      password,
+    });
 
-  if (error || !data.user?.email) {
-    // pesan generik — jangan bocorkan apakah email terdaftar
-    return NextResponse.json(
-      { error: "Email atau kata sandi salah" },
-      { status: 401 }
-    );
+    if (error || !data.user?.email) {
+      return { ok: false, status: 401, error: "Email atau kata sandi salah" };
+    }
+
+    if (!whitelist.includes(data.user.email.toLowerCase())) {
+      // sah tapi bukan admin → keluarkan langsung
+      await supabase.auth.signOut();
+      return { ok: false, status: 403, error: "Akun ini bukan admin kasir" };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[attemptLogin][unexpected]", err);
+    return {
+      ok: false,
+      status: 500,
+      error: "Kesalahan tak terduga saat login",
+      hint: dev ? `detail: ${String((err as Error)?.message ?? err)}` : undefined,
+    };
   }
-
-  if (!whitelist.includes(data.user.email.toLowerCase())) {
-    // login valid TAPI bukan admin → langsung dikeluarkan
-    await supabase.auth.signOut();
-    return NextResponse.json(
-      { error: "Akun ini bukan admin kasir" },
-      { status: 403 }
-    );
-  }
-
-  return NextResponse.json({ ok: true });
 }

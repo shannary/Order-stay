@@ -1,15 +1,11 @@
-import type { Metadata } from "next";
-import { CAFE_NAME } from "@/lib/config";
 import { Suspense } from "react";
+import { SplashFallbackInner } from "@/components/catalog/splash-fallback";
 import { LoginForm } from "@/components/admin/login-form";
 
-export const metadata: Metadata = {
-  title: `Login Admin · ${CAFE_NAME}`,
-};
-
+/** Login admin (kasir/dapur) — dilindungi rate-limit pada API-nya. */
 export default function AdminLoginPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SplashFallbackInner />}>
       <LoginForm />
     </Suspense>
   );

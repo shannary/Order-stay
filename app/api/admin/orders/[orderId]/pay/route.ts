@@ -1,55 +1,53 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { requireAdminUser, unauthorized } from "@/lib/auth-route";
 
 /**
- * Konfirmasi pembayaran tunai oleh kasir.
- * Service role + server-side guard (masih lokal) → update payment_status='paid',
- * yang memicu trigger auto-approve → pesanan masuk antrean dapur,
- * lalu tersebar realtime ke HP pelanggan & dashboard lain.
+ * POST /api/admin/orders/[orderId]/pay
+ * Kasir mengonfirmasi pembayaran tunai → payment_status='paid',
+ * is_approved=true (gerbang dapur terbuka), paid_at dicatat.
  */
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ orderId: string }> }
 ) {
-  const user = await requireAdminUser(_request);
-  if (!user) {
-    return Response.json(
-      { error: "Akses ditolak — kredensial kasir tidak valid" },
-      { status: 401 }
-    );
-  }
-  // TODO: tambahkan role-based check (tabel staff/profiles) sebelum produksi
-  const { orderId } = await params;
+  const user = await requireAdminUser(request);
+  if (!user) return unauthorized();
 
+  const { orderId } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
     return Response.json({ error: "orderId tidak valid" }, { status: 400 });
   }
 
   const supabase = getSupabaseServerClient();
 
+  // Update dengan guard pending → idempotent & anti race dengan webhook
   const { data, error } = await supabase
     .from("orders")
     .update({
       payment_status: "paid",
+      is_approved: true,
       paid_at: new Date().toISOString(),
+      status: "received",
     })
     .eq("id", orderId)
-    .eq("payment_status", "pending") // idempotent: hanya mengubah pending
-    .select("id, order_number, payment_status, is_approved")
-    .single();
+    .eq("payment_status", "pending")
+    .eq("payment_method", "cash")
+    .select("id")
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     return Response.json(
-      { error: "Pesanan tidak ditemukan atau sudah dibayar" },
-      { status: 404 }
+      { error: "Gagal mengonfirmasi pembayaran" },
+      { status: 500 }
+    );
+  }
+  if (!data) {
+    return Response.json(
+      { error: "Pesanan tidak ada / sudah diproses" },
+      { status: 409 }
     );
   }
 
-  return Response.json({
-    orderId: data.id,
-    orderNumber: data.order_number,
-    paymentStatus: data.payment_status,
-    isApproved: data.is_approved, // true via trigger auto-approve
-  });
+  return Response.json({ ok: true });
 }

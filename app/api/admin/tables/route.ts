@@ -1,21 +1,21 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { requireAdminUser, unauthorized } from "@/lib/auth-route";
 
-/**
- * Admin CRUD meja (service role — bypass RLS).
- * GET  → daftar semua meja (termasuk non-aktif)
- * POST → buat meja baru dengan qr_token unik otomatis
- */
+type AdminTable = {
+  id: string;
+  number: number;
+  label: string | null;
+  qr_token: string;
+  is_active: boolean;
+  capacity: number;
+};
+
+/** GET /api/admin/tables — daftar meja milik admin (termasuk qr_token). */
 export async function GET(request: NextRequest) {
   const user = await requireAdminUser(request);
-  if (!user) {
-    return Response.json(
-      { error: "Akses ditolak — harus login admin" },
-      { status: 401 }
-    );
-  }
-  // TODO: tambahkan role-based check (tabel staff/profiles) sebelum produksi
+  if (!user) return unauthorized();
+
   const supabase = getSupabaseServerClient();
   const { data, error } = await supabase
     .from("tables")
@@ -25,56 +25,64 @@ export async function GET(request: NextRequest) {
   if (error) {
     return Response.json({ error: "Gagal memuat meja" }, { status: 500 });
   }
-  return Response.json({ tables: data });
+  return Response.json({ tables: (data ?? []) as AdminTable[] });
 }
 
+/**
+ * POST /api/admin/tables — tambah meja baru.
+ * qr_token dibuat server: `t_` + 12 karakter acak (unik) →
+ * token tanpa ketebalan menu tak bisa ditebak.
+ */
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as {
-    number?: number;
-    label?: string;
-    capacity?: number;
-  };
+  const user = await requireAdminUser(request);
+  if (!user) return unauthorized();
 
-  if (
-    !Number.isInteger(body.number) ||
-    (body.number as number) < 1 ||
-    (body.number as number) > 9999
-  ) {
+  let body: { number?: number; label?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Payload tidak valid" }, { status: 400 });
+  }
+
+  const number = Number(body.number);
+  if (!Number.isInteger(number) || number < 1 || number > 9999) {
     return Response.json(
-      { error: "Nomor meja harus antara 1–9999" },
+      { error: "Nomor meja harus bilangan 1–9999" },
       { status: 400 }
     );
   }
+  const label = (body.label ?? "").trim().slice(0, 50) || null;
+
+  const randomToken = () =>
+    `t_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
   const supabase = getSupabaseServerClient();
 
-  // qr_token unik: "t_" + 20 karakter acak URL-safe
-  const qrToken = `t_${Array.from(crypto.getRandomValues(new Uint8Array(15)))
-    .map((b) => b.toString(36).padStart(2, "0"))
-    .join("")
-    .slice(0, 20)}`;
+  // Coba 3x bila tabrakan token (sangat tidak mungkin)
+  let lastError: unknown = null;
+  for (let i = 0; i < 3; i++) {
+    const { data, error } = await supabase
+      .from("tables")
+      .insert({
+        number,
+        label,
+        qr_token: randomToken(),
+      })
+      .select("id, number, label, qr_token, is_active, capacity")
+      .single();
 
-  const { data, error } = await supabase
-    .from("tables")
-    .insert({
-      number: body.number,
-      label: body.label?.trim() || null,
-      capacity: body.capacity ?? 4,
-      qr_token: qrToken,
-      is_active: true,
-    })
-    .select("id, number, label, qr_token, is_active, capacity")
-    .single();
-
-  if (error) {
-    if (error.code === "23505") {
-      return Response.json(
-        { error: "Nomor meja sudah dipakai" },
-        { status: 409 }
-      );
+    if (!error) {
+      return Response.json({ table: data as AdminTable }, { status: 201 });
     }
-    return Response.json({ error: "Gagal menambah meja" }, { status: 500 });
+    lastError = error;
   }
 
-  return Response.json({ table: data }, { status: 201 });
+  const message = String(lastError);
+  if (message.includes("unique")) {
+    return Response.json(
+      { error: `Nomor meja ${number} sudah terdaftar` },
+      { status: 409 }
+    );
+  }
+  return Response.json({ error: "Gagal menambah meja" }, { status: 500 });
 }

@@ -1,110 +1,123 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 /**
- * POST /api/payments/midtrans/charge  { orderId }
- * Membuat Snap transaction untuk pesanan yang menunggu QRIS.
- * Menyimpan snap_token ke orders.payment_ref ( kontrol state sumber ).
+ * POST /api/payments/midtrans/charge
+ * Membuat transaksi Snap Midtrans (QRIS) untuk pesanan yang sudah dibuat.
+ *  - Harga total dibaca dari DB (bukan klien).
+ *  - Server key TIDAK pernah keluar dari server.
+ * respons: { snapToken, redirectUrl? }
  */
 export async function POST(request: NextRequest) {
+  let body: { orderId?: string };
   try {
-    const { orderId } = (await request.json()) as { orderId?: string };
-    if (!orderId || !/^[0-9a-f-]{36}$/i.test(orderId)) {
-      return NextResponse.json({ error: "orderId tidak valid" }, { status: 400 });
-    }
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Payload tidak valid" }, { status: 400 });
+  }
 
-    const serverKey = process.env.MIDTRANS_SERVER_KEY;
-    const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY;
-    if (!serverKey || !clientKey) {
-      return NextResponse.json(
-        { error: "Kunci Midtrans belum dikonfigurasi di .env.local" },
-        { status: 501 }
-      );
-    }
+  const orderId = body.orderId ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    return Response.json({ error: "orderId tidak valid" }, { status: 400 });
+  }
 
-    const isProduction = process.env.MIDTRANS_IS_PRODUCTION === "true";
-    const apiBase = isProduction
-      ? "https://app.midtrans.com/snap/v1/transactions"
-      : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  const isProduction = process.env.MIDTRANS_IS_PRODUCTION === "true";
+  if (!serverKey) {
+    return Response.json(
+      { error: "Pembayaran QRIS belum dikonfigurasi" },
+      { status: 503 }
+    );
+  }
 
-    const supabase = getSupabaseServerClient();
-    const { data: order, error } = await supabase
-      .from("orders")
-      .select("id, order_number, total_amount, payment_status, payment_method, tables(number)")
-      .eq("id", orderId)
-      .maybeSingle();
+  const supabase = getSupabaseServerClient();
+  const { data: order } = await supabase
+    .from("orders")
+    .select(
+      "id, order_number, total_amount, payment_status, payment_method, tables(number)"
+    )
+    .eq("id", orderId)
+    .maybeSingle();
 
-    if (error || !order) {
-      return NextResponse.json({ error: "Pesanan tidak ditemukan" }, { status: 404 });
-    }
-    if ((order as any).payment_status !== "pending") {
-      return NextResponse.json(
-        { error: "Pesanan sudah diproses" },
-        { status: 409 }
-      );
-    }
-    if ((order as any).payment_method !== "qris") {
-      return NextResponse.json(
-        { error: "Pesanan ini bukan metode QRIS" },
-        { status: 400 }
-      );
-    }
+  const o = order as {
+    id: string;
+    order_number: string;
+    total_amount: number;
+    payment_status: string;
+    payment_method: string;
+    tables: { number: number } | null;
+  } | null;
 
-    const grossAmount = (order as any).total_amount as number;
+  if (!o || o.payment_method !== "qris") {
+    return Response.json(
+      { error: "Pesanan tidak memakai QRIS" },
+      { status: 400 }
+    );
+  }
+  if (o.payment_status !== "pending") {
+    return Response.json(
+      { error: "Pesanan sudah diproses" },
+      { status: 409 }
+    );
+  }
 
+  const gross = `${o.total_amount}.00`;
+  const apiBase = isProduction
+    ? "https://app.midtrans.com/snap/v1/transactions"
+    : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+  try {
     const res = await fetch(apiBase, {
       method: "POST",
       headers: {
-        Accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: `Basic ${Buffer.from(
-          `${serverKey}:`
-        ).toString("base64")}`,
+        Accept: "application/json",
+        Authorization: `Basic ${Buffer.from(`${serverKey}:`).toString("base64")}`,
       },
       body: JSON.stringify({
         transaction_details: {
-          order_id: orderId,
-          gross_amount: grossAmount,
+          order_id: o.id,
+          gross_amount: o.total_amount,
         },
-        customer_details: {
-          // identifikasi minimal; identitas tidak wajib di midtrans snap
-          first_name: `Meja ${(order as any).tables?.number ?? "-"}`,
-        },
-        expiry: { duration: 30, unit: "minute" },
+        item_details: [
+          {
+            id: o.order_number,
+            price: o.total_amount,
+            quantity: 1,
+            name: `Pesan Meja ${o.tables?.number ?? "?"} · ${o.order_number}`,
+          },
+        ],
+        credit_card: { secure: true },
       }),
     });
 
-    const data = (await res.json()) as {
+    const raw = (await res.json()) as {
       token?: string;
       redirect_url?: string;
       error_messages?: string[];
     };
 
-    if (!res.ok || !data.token) {
-      console.error("[midtrans charge]", res.status, data);
-      return NextResponse.json(
-        { error: data.error_messages?.join(", ") ?? "Gagal membuat transaksi QRIS" },
-        { status: 502 }
-      );
+    if (!res.ok) {
+      const detail =
+        raw.error_messages?.[0] ?? `Midtrans error (status ${res.status})`;
+      return Response.json({ error: detail }, { status: 502 });
     }
 
-    // Simpan token & url redirect agar tkh bisa melanjutkan pembayaran
-    await (supabase as any)
+    // Catat referensi pembayaran untuk rekonsiliasi
+    await supabase
       .from("orders")
-      .update({ payment_ref: data.token })
-      .eq("id", orderId);
+      .update({ payment_ref: raw.token ?? null })
+      .eq("id", o.id)
+      .eq("payment_status", "pending");
 
-    return NextResponse.json({
-      snapToken: data.token,
-      clientKey,
-      redirectUrl: data.redirect_url ?? null,
-      isProduction,
+    return Response.json({
+      snapToken: raw.token ?? null,
+      redirectUrl: raw.redirect_url ?? null,
     });
-  } catch (err) {
-    console.error("[POST /api/payments/midtrans/charge]", err);
-    return NextResponse.json(
-      { error: "Terjadi kesalahan pada server" },
-      { status: 500 }
+  } catch {
+    return Response.json(
+      { error: "Gagal menghubungi Midtrans" },
+      { status: 502 }
     );
   }
 }

@@ -1,46 +1,64 @@
-import type { Metadata } from "next";
 import { Suspense } from "react";
-import { CAFE_NAME } from "@/lib/config";
 import { redirect } from "next/navigation";
-import { getSupabaseClient } from "@/lib/supabase";
-import { MenuInvalidSplash } from "@/components/catalog/menu-invalid-splash";
+import {
+  MenuInvalidSplash,
+} from "@/components/catalog/menu-invalid-splash";
 import { SplashFallbackInner } from "@/components/catalog/splash-fallback";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 
-export const metadata: Metadata = {
-  title: `Meja Tidak Valid · ${CAFE_NAME}`,
-};
-
-export default function QrTablePage({ params }: PageProps<"/m/[token]">) {
+/**
+ * Gerbang wajib-scan: QR meja mengarah ke /m/{qr_token}.
+ * Token valid →_redirect ke /table/{number}?tid={table_id}
+ * (tid menyetel sesi meja). Token tidak dikenal → splash invalid.
+ */
+export default function MenuTokenPage({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}) {
   return (
     <Suspense fallback={<SplashFallbackInner />}>
-      <QrTableContent params={params} />
+      <TokenResolver tokenPromise={params} />
     </Suspense>
   );
 }
 
-async function QrTableContent({
-  params,
+async function TokenResolver({
+  tokenPromise,
 }: {
-  params: PageProps<"/m/[token]">["params"];
+  tokenPromise: Promise<{ token: string }>;
 }) {
-  const { token } = await params;
-  const qrToken = decodeURIComponent(token);
+  const { token } = await tokenPromise;
 
-  // Lookup meja berdasarkan qr_token.
-  // Anon key aman di sini: RLS hanya memperbolehkan read tabel aktif.
-  const client = getSupabaseClient();
-  const { data, error } = await client
-    .from("tables")
-    .select("id, number")
-    .eq("qr_token", qrToken)
-    .eq("is_active", true)
-    .maybeSingle();
+  let table: {
+    id: string;
+    number: number;
+    is_active: boolean;
+  } | null = null;
+  try {
+    const supabase = getSupabaseServerClient();
+    const { data } = await supabase
+      .from("tables")
+      .select("id, number, is_active")
+      .eq("qr_token", token)
+      .maybeSingle();
+    const row = (data as unknown as {
+      id: string;
+      number: number | null;
+      is_active: boolean | null;
+    } | null) ?? null;
+    table = row && row.is_active !== false ? {
+      id: row.id,
+      number: row.number ?? 0,
+      is_active: true,
+    } : null;
+  } catch {
+    // Supabase env belum diisi → anggap token tidak dikenal
+  }
 
-  if (error || !data) {
+  if (!table) {
     return <MenuInvalidSplash />;
   }
 
-  redirect(
-    `/table/${data.number}?tid=${encodeURIComponent(data.id as string)}`
-  );
+  redirect(`/table/${table.number}?tid=${table.id}`);
 }

@@ -1,23 +1,6 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { requireAdminUser, unauthorized } from "@/lib/auth-route";
-
-type OrderRow = {
-  id: string;
-  order_number: string;
-  status: string;
-  payment_status: string;
-  payment_method: string;
-  total_amount: number;
-  created_at: string;
-  tables: { number: number } | null;
-  order_items: Array<{
-    item_name: string;
-    quantity: number;
-    unit_price: number;
-    notes: string | null;
-  }> | null;
-};
 
 /**
  * GET /api/admin/orders?queue=pending|kitchen
@@ -48,37 +31,40 @@ export async function GET(request: NextRequest) {
     .lt("created_at", cutoff);
 
   if (queue === "kitchen") {
+    // Antrean dapur: hanya pesanan lunas yang belum completed
     const { data, error } = await supabase
       .from("orders")
       .select(
-        "id, order_number, status, payment_status, payment_method, total_amount, created_at, tables(number), order_items(item_name, quantity, unit_price, notes)"
+        "id, order_number, status, total_amount, created_at, payment_method, tables(number), order_items(item_name, quantity, unit_price, notes)"
       )
       .eq("payment_status", "paid")
+      .eq("is_approved", true)
       .in("status", ["received", "cooking", "served"])
-      .order("created_at", { ascending: true })
-      .limit(60);
+      .order("created_at", { ascending: true });
 
     if (error) {
-      return Response.json({ error: "Gagal memuat antrean" }, { status: 500 });
+      return Response.json(
+        { error: "Gagal memuat antrean dapur" },
+        { status: 500 }
+      );
     }
-    return Response.json({
-      orders: data as unknown as OrderRow[],
-    });
+    return Response.json({ orders: data ?? [] });
   }
 
+  // queue=pending (default): antrean kasir
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, order_number, status, payment_status, payment_method, total_amount, created_at, tables(number), order_items(count)"
+      "id, order_number, status, total_amount, payment_method, created_at, tables(number)"
     )
     .eq("payment_status", "pending")
-    .order("created_at", { ascending: true })
-    .limit(60);
+    .order("created_at", { ascending: true });
 
   if (error) {
-    return Response.json({ error: "Gagal memuat transaksi" }, { status: 500 });
+    return Response.json(
+      { error: "Gagal memuat antrean kasir" },
+      { status: 500 }
+    );
   }
-  return Response.json({
-    orders: data as unknown as OrderRow[],
-  });
+  return Response.json({ orders: data ?? [] });
 }

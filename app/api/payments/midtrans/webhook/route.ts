@@ -1,124 +1,88 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
-type MidtransWebhook = {
-  order_id: string;           // = orders.id yang kita kirim saat charge
-  status_code: string;        // cth "200"
-  gross_amount: string;       // cth "24000.00"
-  signature_key: string;
-  transaction_status: string; // capture | settlement | pending | deny | expire | cancel | failure
-  transaction_time?: string;
+type WebhookBody = {
+  order_id?: string;
+  status_code?: string;
+  gross_amount?: string;
+  signature_key?: string;
+  transaction_status?: string;
+  fraud_status?: string;
 };
-
-/** SHA512(order_id + status_code + gross_amount + server_key) */
-function verifySignature(payload: MidtransWebhook, serverKey: string): boolean {
-  const expected = createHmac("sha512", serverKey)
-    .update(
-      `${payload.order_id}${payload.status_code}${payload.gross_amount}`
-    )
-    .digest("hex");
-
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(payload.signature_key ?? "", "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 /**
  * POST /api/payments/midtrans/webhook
- * Endpoint notifikasi Midtrans (tanpa auth, dilindungi signature_key).
- * settlement/capture → payment_status='paid' (+ paid_at) —
- * trigger orders_auto_approve akan set is_approved=true sehingga
- * pesanan otomatis masuk KDS dapur, dpn realtime ke seluruh pelanggan.
+ * Notifikasi Midtrans. Validasi anti-tamper:
+ *   signature_key = sha512(order_id + status_code + gross_amount + SERVER_KEY)
+ * signature_key tidak cocok → 403 tanpa merubah status.
+ * settlement / capture(clear) → paid + is_approved (trigger SQL ikut menyetel).
  */
 export async function POST(request: NextRequest) {
+  let body: WebhookBody;
   try {
-    const payload = (await request.json()) as MidtransWebhook;
-    const serverKey = process.env.MIDTRANS_SERVER_KEY;
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Payload tidak valid" }, { status: 400 });
+  }
 
-    if (!serverKey) {
-      return NextResponse.json(
-        { error: "Kunci Midtrans belum dikonfigurasi" },
-        { status: 501 }
-      );
-    }
+  const {
+    order_id: orderId,
+    status_code: statusCode,
+    gross_amount: grossAmount,
+    signature_key: signatureKey,
+    transaction_status: transactionStatus,
+    fraud_status: fraudStatus,
+  } = body;
 
-    // 1. Verifikasi signature — tolak sejak awal bila tidak valid
-    if (!verifySignature(payload, serverKey)) {
-      return NextResponse.json(
-        { error: "Signature tidak valid" },
-        { status: 401 }
-      );
-    }
+  if (!orderId || !signatureKey || !statusCode || !grossAmount) {
+    return Response.json({ error: "Payload tidak lengkap" }, { status: 400 });
+  }
 
-    if (!/^[0-9a-f-]{36}$/i.test(payload.order_id)) {
-      return NextResponse.json(
-        { error: "order_id tidak valid" },
-        { status: 400 }
-      );
-    }
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  if (!serverKey) return Response.json({ error: "Server key belum disetel" }, { status: 503 });
 
-    const paid =
-      payload.transaction_status === "settlement" ||
-      payload.transaction_status === "capture";
+  const expected = createHash("sha512")
+    .update(`${orderId}${statusCode}${grossAmount}${serverKey}`)
+    .digest("hex");
+  if (expected !== signatureKey) {
+    // Bukan dari Midtrans → tolak TANPA membocorkan status order
+    return Response.json({ error: "signature tidak valid" }, { status: 403 });
+  }
 
-    // 2. Anti-tamper: nominal webhook HARUS sama dengan total order DB
-    if (paid) {
-      const supabase = getSupabaseServerClient();
-      const { data: order } = await supabase
-        .from("orders")
-        .select("total_amount, payment_status")
-        .eq("id", payload.order_id)
-        .maybeSingle();
+  const settle =
+    transactionStatus === "settlement" ||
+    (transactionStatus === "capture" && fraudStatus === "accept");
+  if (!settle) {
+    // pending/expire/failure → biarkan status pending (atau expire/kadaluarsa)
+    return Response.json({ ok: true, acted: false });
+  }
 
-      if (!order) {
-        return NextResponse.json(
-          { error: "Pesanan tidak ditemukan" },
-          { status: 404 }
-        );
-      }
-      const claimed = Math.round(Number(payload.gross_amount));
-      if (Number.isNaN(claimed) || claimed !== (order as any).total_amount) {
-        // Nominal beda → jangan MENGHARGAI sudah dilakukan; tolak keras
-        console.error(
-          "[midtrans webhook] gross_amount mismatch",
-          payload.order_id,
-          claimed,
-          (order as any).total_amount
-        );
-        return NextResponse.json(
-          { error: "Nominal pembayaran tidak sesuai" },
-          { status: 400 }
-        );
-      }
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      payment_status: "paid",
+      is_approved: true,
+      paid_at: new Date().toISOString(),
+    })
+    .eq("id", orderId)
+    .eq("payment_status", "pending")
+    .eq("payment_method", "qris")
+    .select("id")
+    .maybeSingle();
 
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({
-          payment_status: "paid",
-          paid_at: payload.transaction_time
-            ? new Date(payload.transaction_time).toISOString()
-            : new Date().toISOString(),
-        })
-        .eq("id", payload.order_id)
-        .eq("payment_status", "pending");
-
-      if (updateError) {
-        console.error("[midtrans webhook] update gagal", updateError);
-        return NextResponse.json(
-          { error: "Gagal memperbarui pesanan" },
-          { status: 500 }
-        );
-      }
-    }
-
-    // 3. Midtrans wajib menerima HTTP 2xx back
-    return NextResponse.json({ received: true });
-  } catch (err) {
-    console.error("[POST /api/payments/midtrans/webhook]", err);
-    return NextResponse.json(
-      { error: "Terjadi kesalahan pada server" },
+  if (error) {
+    return Response.json(
+      { error: "Gagal memperbarui status" },
       { status: 500 }
     );
   }
+  if (!data) {
+    // Idempotent — sudah paid sebelumnya / order berbeda → tetap 200 agar
+    // Midtrans tidak me-retry terus.
+    return Response.json({ ok: true, acted: false });
+  }
+
+  return Response.json({ ok: true, acted: true });
 }

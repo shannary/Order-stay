@@ -23,12 +23,11 @@ export async function POST(
   const admin = await requireAdminUser(request);
 
   // Ambil order untuk cek status + pemilik sesi
-  let query = supabase
+  const { data: order, error: fetchError } = await supabase
     .from("orders")
     .select("id, order_number, table_id, status, payment_status")
     .eq("id", orderId)
     .maybeSingle();
-  const { data: order, error: fetchError } = await query;
 
   if (fetchError || !order) {
     return Response.json(
@@ -37,9 +36,17 @@ export async function POST(
     );
   }
 
+  const o = order as {
+    id: string;
+    order_number: string;
+    table_id: string;
+    status: string;
+    payment_status: string;
+  };
+
   const isPending =
-    (order as { payment_status: string }).payment_status === "pending" &&
-    ["received", "review"].includes((order as { status: string }).status);
+    o.payment_status === "pending" &&
+    ["received", "review"].includes(o.status);
 
   if (!isPending) {
     return Response.json(
@@ -52,10 +59,7 @@ export async function POST(
   if (!admin) {
     // Pelanggan: validasi sesi meja dengan cookie
     const sessionTable = request.cookies.get("table_id")?.value;
-    if (
-      !sessionTable ||
-      sessionTable !== (order as { table_id: string }).table_id
-    ) {
+    if (!sessionTable || sessionTable !== o.table_id) {
       return unauthorized();
     }
   }
@@ -75,6 +79,6 @@ export async function POST(
 
   return Response.json({
     cancelled: true,
-    orderNumber: (order as { order_number: string }).order_number,
+    orderNumber: o.order_number,
   });
 }
