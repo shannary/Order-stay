@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Clock, Info, Flame, Utensils, PartyPopper } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { motion } from "framer-motion";
+import {
+  Check,
+  Clock,
+  Info,
+  Flame,
+  Utensils,
+  PartyPopper,
+  ArrowLeft,
+} from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatRupiah } from "@/lib/format";
@@ -67,10 +78,37 @@ export function OrderStatusClient({ order, items }: OrderStatusClientProps) {
     STEPS.findIndex((s) => s.id === live.status)
   );
   const waitingApproval = !live.isApproved;
+  const canCancel =
+    live.paymentStatus === "pending" && live.status === "received";
+  const router = useRouter();
+
+  const cancelOrder = async () => {
+    if (!confirm("Batalkan pesanan ini?")) return;
+    try {
+      const res = await fetch(`/api/orders/${live.id}/cancel`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal membatalkan");
+      toast.info("Pesanan dibatalkan");
+      router.push("/");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal membatalkan");
+    }
+  };
 
   return (
     <div className="min-h-dvh bg-[#FBFBFA] pb-10">
       <main className="mx-auto max-w-md space-y-4 p-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600 transition-colors hover:text-[#18181B]"
+        >
+          <ArrowLeft className="size-4" aria-hidden />
+          Kembali
+        </button>
+
         {/* Kode pesanan utama */}
         <Card className="rounded-2xl border-zinc-200 bg-white shadow-none">
           <CardContent className="p-5 text-center">
@@ -211,6 +249,17 @@ export function OrderStatusClient({ order, items }: OrderStatusClientProps) {
             </div>
           </CardContent>
         </Card>
+
+        {/* Batalkan pesanan — hanya sebelum dibayar & belum diapprove dapur */}
+        {canCancel && (
+          <button
+            type="button"
+            onClick={() => void cancelOrder()}
+            className="h-11 w-full rounded-full border border-red-200 bg-red-50 text-sm font-semibold text-red-700 transition-colors hover:bg-red-100"
+          >
+            Batalkan Pesanan (Tidak Jadi)
+          </button>
+        )}
       </main>
     </div>
   );

@@ -9,6 +9,7 @@ import QRCode from "react-qr-code";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { QrStickerModal } from "@/components/admin/qr-sticker-modal";
+import { BackButton } from "@/components/catalog/back-button";
 
 type Table = {
   id: string;
@@ -77,6 +78,9 @@ export function TablesAdminClient() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-xl bg-[#FBFBFA] p-4 pb-10 md:p-8">
+      <div className="mb-2">
+        <BackButton fallbackHref="/" label="Beranda" />
+      </div>
       <header className="mb-6">
         <h1 className="text-lg font-bold text-[#18181B]">Admin · Meja</h1>
         <p className="text-xs text-zinc-500">

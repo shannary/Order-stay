@@ -1,17 +1,16 @@
 -- 003: SECURITAS — memperketat RLS read/insert
 
 -- Masalah yang diperbaiki:
---   B1) Policy lama "Allow public read own orders / order_items (using(true))"
---      membuat anonymous bisa membaca seluruh orders semua meja.
---   B2) Insert order harus dikunci ke meja yang sedang AKTIF.
+--   B1) Policy lama read (using(true)) = anonymous membaca seluruh orders.
+--   B2) ANON INSERT via REST langsung (POST /rest/v1/orders dengan anon key)
+--      dapat mengarang total_amount murah → ditutup total.
+--   B3) Insert kunci ke meja AKTIF.
 --
 -- Setelah migration ini:
---   * Anon (pelanggan) hanya bisa:
---       - membaca orders/order_items milik MEJA AKTIF yang table_id-nya
---         mereka pegang (didapat dari hasil scan QR).
---       - membuat order baru, SELAMA meja-nya masih aktif.
---   * POS/KDS DAPUR tidak lagi membaca via anon key —
---     semuanya di-back dari /api/admin/* melalui service role (lihat kode).
+--   * Anon HANYA bisa membaca order milik meja aktif yang table_id-nya
+--     mereka pegang (dari hasil scan QR).
+--   * ANON TIDAK BISA insert orders/order_items sama sekali —
+--     semua tulisan lewat /api/orders/create & /api/admin/* (service role).
 
 -- ============ Helper SECURITY DEFINER ============
 -- Satu-satunya jalur anon menyentuh orders dengan klausa lebih lebar.
@@ -40,13 +39,8 @@ create policy "Read only orders of active tables"
   for select
   using (public.order_of_active_table(id));
 
-create policy "Insert order only against active tables"
-  on public.orders
-  for insert
-  with check (exists (
-    select 1 from public.tables t
-    where t.id = table_id and t.is_active
-  ));
+-- INSERT via anon DITUTUP: tulis hanya dari service role (API server).
+-- (tanpa policy insert untuk role anon/authenticated)
 
 -- ============ order_items ============
 drop policy if exists "Allow public read own order_items" on public.order_items;
@@ -57,10 +51,13 @@ create policy "Read only items of orders in active tables"
   for select
   using (public.order_of_active_table(order_id));
 
-create policy "Insert items only into valid pending order"
-  on public.order_items
-  for insert
-  with check (public.order_of_active_table(order_id));
+-- INSERT via anon DITUTUP sama seperti orders.
+
+-- ============ tables: sembunyikan qr_token dari anon ============
+-- Tanpa ini, GET /rest/v1/tables (anon) menemukan qr_token SEMUA meja
+-- → bypass seluruh flow "wajib scan". Kolom qr_token hanya dibaca
+-- via service role (admin API).
+revoke select (qr_token) on public.tables from anon, authenticated;
 
 -- Realtime untuk orders (idempotent)
 alter publication supabase_realtime add table public.orders;

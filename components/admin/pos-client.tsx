@@ -7,6 +7,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { formatRupiah } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { orderStatusMeta } from "@/lib/status-map";
+import { BackButton } from "@/components/catalog/back-button";
 import { cn } from "@/lib/utils";
 
 type PendingOrder = {
@@ -97,8 +98,26 @@ export function PosClient() {
     }
   };
 
+  const cancelPending = async (orderId: string, orderNumber: string) => {
+    if (!confirm(`Batalkan pesanan ${orderNumber}?`)) return;
+    try {
+      const res = await fetch(`/api/orders/${orderId}/cancel`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal membatalkan");
+      toast.info(`${orderNumber} dibatalkan`);
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal membatalkan");
+    }
+  };
+
   return (
     <div className="mx-auto min-h-dvh max-w-xl bg-[#FBFBFA] p-4 pb-10 md:p-8">
+      <div className="mb-2">
+        <BackButton fallbackHref="/" label="Beranda" />
+      </div>
       <header className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-[#18181B]">Kasir · POS</h1>
@@ -195,6 +214,15 @@ export function PosClient() {
                   Menunggu pembayaran QRIS (webhook Midtrans).
                 </p>
               )}
+              <button
+                type="button"
+                onClick={() =>
+                  void cancelPending(order.id, order.order_number)
+                }
+                className="mt-2 h-9 w-full rounded-full border border-red-200 bg-red-50 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+              >
+                Batalkan Pesanan
+              </button>
             </li>
           ))}
         </ul>

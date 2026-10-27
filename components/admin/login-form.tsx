@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LogIn } from "lucide-react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,20 +22,17 @@ export function LoginForm() {
     setError(null);
     setLoading(true);
     try {
-      const supabase = getSupabaseBrowserClient();
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
-      if (authError) {
-        setError(
-          authError.message === "Invalid login credentials"
-            ? "Email atau kata sandi salah"
-            : authError.message
-        );
+      const data = await res.json() as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Email atau kata sandi salah");
         return;
       }
-      // Sesi tersimpan di cookie (@supabase/ssr) → proxy.ts akan mengizinkan
+      // Session cookie di-set layanan server → proxy.ts langsung mengizinkan
       router.replace(nextPath);
       router.refresh();
     } catch {

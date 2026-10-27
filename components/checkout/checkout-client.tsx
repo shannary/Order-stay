@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatRupiah } from "@/lib/format";
 import type { CartItem } from "@/components/catalog/customization-sheet";
+import { BackButton } from "@/components/catalog/back-button";
 import { cn } from "@/lib/utils";
 
 const CART_KEY = "orders_cart_v1";
@@ -54,6 +55,16 @@ export function CheckoutClient() {
     }
     setLoadingCart(false);
   }, []);
+
+  // Sync balik: perubahan keranjang di checkout tetap tersimpan
+  useEffect(() => {
+    if (loadingCart) return;
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    } catch {
+      // ignore
+    }
+  }, [cart, loadingCart]);
 
   const total = cart.reduce(
     (sum, i) => sum + i.menuItem.price * i.quantity,
@@ -153,13 +164,30 @@ export function CheckoutClient() {
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-[#FBFBFA] text-center">
         <p className="text-lg font-bold text-[#18181B]">Keranjang kosong</p>
         <p className="text-sm text-zinc-500">Silakan pilih menu terlebih dahulu.</p>
+        <BackButton fallbackHref="/" className="rounded-full bg-white px-4 py-2 ring-1 ring-zinc-200" />
       </div>
     );
   }
 
+  const emptyCart = () => {
+    localStorage.removeItem(CART_KEY);
+    setCart([]);
+    toast.info("Keranjang dikosongkan — tidak jadi pesan");
+  };
+
   return (
     <div className="min-h-dvh bg-[#FBFBFA] pb-28">
       <main className="mx-auto max-w-md space-y-4 p-4">
+        <div className="flex items-center justify-between">
+          <BackButton fallbackHref="/" label="Menu" />
+          <button
+            type="button"
+            onClick={emptyCart}
+            className="text-sm font-semibold text-red-600 transition-colors hover:text-red-700"
+          >
+            Tidak Jadi · Kosongkan
+          </button>
+        </div>
         <h1 className="text-xl font-bold text-[#18181B]">Checkout</h1>
         {tableNumber && (
           <p className="flex items-center gap-1.5 text-sm text-zinc-500">
@@ -183,6 +211,17 @@ export function CheckoutClient() {
                       Note: {item.notes}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCart((prev) =>
+                        prev.filter((i) => i.uniqueId !== item.uniqueId)
+                      );
+                    }}
+                    className="mt-0.5 text-[11px] font-semibold text-red-600 underline-offset-2 hover:underline"
+                  >
+                    Tidak jadi item ini
+                  </button>
                 </div>
                 <span className="shrink-0 text-sm font-medium text-[#18181B]">
                   {formatRupiah(item.menuItem.price * item.quantity)}

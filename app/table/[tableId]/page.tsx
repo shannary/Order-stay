@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { MenuCatalog } from "@/components/catalog/menu-catalog";
 import { TableSession } from "@/components/catalog/table-session";
+import { MenuInvalidSplash } from "@/components/catalog/menu-invalid-splash";
 import { CAFE_NAME } from "@/lib/config";
+import { getSupabaseClient } from "@/lib/supabase";
 
 export const metadata: Metadata = {
   title: `Menu · ${CAFE_NAME}`,
@@ -11,6 +14,7 @@ export const metadata: Metadata = {
 
 export default function TableMenuPage({
   params,
+  searchParams,
 }: PageProps<"/table/[tableId]">) {
   return (
     <Suspense
@@ -20,26 +24,64 @@ export default function TableMenuPage({
         </div>
       }
     >
-      <TableMenuContent params={params} />
+      <TableMenuContent
+        params={params as unknown as Promise<{ tableId: string }>}
+        searchParams={searchParams as unknown as Promise<Record<string, string | string[] | undefined>>}
+      />
     </Suspense>
   );
 }
 
+/**
+ * ANTI-BYPASS:
+ * Akses langsung ke /table/{nomor} TANPA hasil scan QR
+ * (tidak ada cookie table_id ATAU ?tid yang valid) → splash
+ * "Meja Tidak Valid" dan keluar dari halaman menu.
+ */
 async function TableMenuContent({
   params,
+  searchParams,
 }: {
-  params: PageProps<"/table/[tableId]">["params"];
+  params: Promise<{ tableId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { tableId } = await params;
-  // TODO: fetch nama meja dari Supabase berdasarkan tableId/qr_token
-  const tableNumber = decodeURIComponent(tableId).replace(/^meja-?/i, "") || "1";
+  const [{ tableId: urlId }, sp, cookieStore] = await Promise.all([
+    params,
+    searchParams,
+    cookies(),
+  ]);
+
+  const fromUrl = decodeURIComponent(String(urlId)).replace(/^meja-?/i, "");
+  const expectedNumber = Number(fromUrl) || 0;
+
+  const tidParam = typeof sp.tid === "string" ? sp.tid : undefined;
+  const cookieTableId = cookieStore.get("table_id")?.value;
+  const uuidRe = /^[0-9a-f-]{36}$/i;
+
+  // Kandidat table_id: ?tid (dari redirect /m/{token}) → cookie sesi lama
+  const candidate = (tidParam ?? cookieTableId) as string | undefined;
+  if (!candidate || !uuidRe.test(candidate)) {
+    return <MenuInvalidSplash />;
+  }
+
+  // Verifikasi ke DB: meja harus aktif DAN nomor cocok dengan URL
+  const { data: table } = await getSupabaseClient()
+    .from("tables")
+    .select("id, number")
+    .eq("id", candidate)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!table || (table as { number: number }).number !== expectedNumber) {
+    return <MenuInvalidSplash />;
+  }
 
   return (
     <>
       <Suspense fallback={null}>
-        <TableSession tableNumber={tableNumber} />
+        <TableSession tableNumber={String(expectedNumber)} />
       </Suspense>
-      <MenuCatalog tableNumber={tableNumber} />
+      <MenuCatalog tableNumber={String(expectedNumber)} />
     </>
   );
 }

@@ -24,6 +24,10 @@ type OrderRow = {
  * Satu pintu baca untuk dashboard kasir & dapur (service role).
  *  - pending  → payment_status='pending'  (antrean kasir)
  *  - kitchen  → payment_status='paid' AND status IN received/cooking/served
+ *
+ * Penyapuan otomatis: order tunai PENDING lebih dari 60 menit tanpa
+ * validasi kasir dihapus ("tidak jadi"). Berjalan tiap refresh kasir
+ * sehingga tidak perlu cron terpisah.
  * Auth: requireAdminUser (whitelist env ADMIN_EMAILS).
  */
 export async function GET(request: NextRequest) {
@@ -32,6 +36,16 @@ export async function GET(request: NextRequest) {
 
   const queue = request.nextUrl.searchParams.get("queue") ?? "pending";
   const supabase = getSupabaseServerClient();
+
+  // ---- SWEEP order tunai basi (>60 menit) ----
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  await supabase
+    .from("orders")
+    .delete()
+    .eq("payment_method", "cash")
+    .eq("payment_status", "pending")
+    .eq("status", "received")
+    .lt("created_at", cutoff);
 
   if (queue === "kitchen") {
     const { data, error } = await supabase

@@ -13,6 +13,7 @@ import {
   LogIn,
 } from "lucide-react";
 import { CAFE_NAME, CAFE_TAGLINE } from "@/lib/config";
+import { QrCamera } from "@/components/landing/qr-camera";
 
 const FEATURES = [
   {
@@ -51,6 +52,7 @@ const fadeUp = {
 
 export function Landing() {
   const [year, setYear] = useState<number | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => setYear(new Date().getFullYear()), []);
 
@@ -120,9 +122,10 @@ export function Landing() {
           Scan QR di meja, pesan dari ponselmu, dan biarkan kopi yang menemukanmu.
         </motion.p>
 
-        {/* ===== TOMBOL QR SCAN BESAR DI TENGAH ===== */}
-        <motion.a
-          href="/table/meja-1"
+        {/* ===== TOMBOL QR SCAN BESAR DI TENGAH — buka kamera ===== */}
+        <motion.button
+          type="button"
+          onClick={() => setScannerOpen(true)}
           initial={{ scale: 0.85, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 16 }}
@@ -145,7 +148,7 @@ export function Landing() {
               mulai pesan di sini
             </span>
           </span>
-        </motion.a>
+        </motion.button>
 
         <motion.div
           variants={fadeUp}
@@ -156,11 +159,14 @@ export function Landing() {
         >
           <p className="text-xs font-bold text-[#18181B]">Belum di meja?</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-600">
-            Datang ke kasir atau pilih meja favorit, scan QR yang terdempel
-            menggelar di meja — katalog menu otomatis terbuka di ponsel yang sama.
+            Datang ke kasir atau pilih meja favorit, scan QR yang tertempel
+            di meja — katalog menu otomatis terbuka di ponsel yang sama.
           </p>
         </motion.div>
       </section>
+
+      {/* Modal kamera QR */}
+      <QrCamera open={scannerOpen} onClose={() => setScannerOpen(false)} />
 
       {/* ============ FITUR ============ */}
       <section id="fitur" className="mx-auto max-w-6xl px-6 py-16">
