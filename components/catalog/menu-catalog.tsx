@@ -154,12 +154,25 @@ export function MenuCatalog({ tableNumber }: MenuCatalogProps) {
           <OrderHistory />
         ) : (
           <>
+            {/* Mendorong eksplorasi: jumlah item + petunjuk menyapu (curiosity gap) */}
+            {category === "all" && (
+              <p className="mb-2 flex items-center justify-between text-[11px] text-zinc-500">
+                <span>
+                  {filteredItems.length} menu tersedia —{" "}
+                  <span className="font-semibold text-[#4A5D4E]">
+                    gulir untuk semua
+                  </span>
+                </span>
+                <span aria-hidden>👇</span>
+              </p>
+            )}
             <AnimatePresence mode="popLayout">
               <div key={category} className="grid grid-cols-2 gap-3">
-                {filteredItems.map((item) => (
+                {filteredItems.map((item, index) => (
                   <MenuCard
                     key={item.id}
                     item={item}
+                    index={index}
                     onSelect={(i) => {
                       setSelected(i);
                       setSheetOpen(true);
