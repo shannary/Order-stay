@@ -17,8 +17,8 @@ export async function requireAdminUser(request: NextRequest) {
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 
-  // fail-closed: tanpa whitelist, tidak ada yang lolos
-  if (whitelist.length === 0) return null;
+  // Whitelist opsional: hanya filter bila ADMIN_EMAILS diisi.
+  // (Sama dengan attemptLogin — login normal tanpa whitelist termasuk default.)
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -34,7 +34,9 @@ export async function requireAdminUser(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user?.email) return null;
-  return whitelist.includes(user.email.toLowerCase()) ? user : null;
+  return whitelist.length === 0 || whitelist.includes(user.email.toLowerCase())
+    ? user
+    : null;
 }
 
 export function unauthorized() {
