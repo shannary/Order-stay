@@ -46,7 +46,7 @@ export async function POST(
 
   const isPending =
     o.payment_status === "pending" &&
-    ["received", "review"].includes(o.status);
+    ["received"].includes(o.status);
 
   if (!isPending) {
     return Response.json(

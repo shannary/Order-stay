@@ -4,43 +4,44 @@ import { cookies } from "next/headers";
 export type LoginResult = { ok: true } | { ok: false; status: number; error: string; hint?: string };
 
 /**
- * Proses login admin (server-side).
+ * Proses login admin (server-side). Keamanan ganda:
+ *   Layer 1 — Supabase Auth (email + kata sandi, sesi cookie httpOnly).
+ *   Layer 2 — PIN admin (env ADMIN_PIN, diverifikasi SERVER-SIDE; tidak
+ *             pernah dikirim ke browser kecuali hasil verifikasi).
+ * whitelist email opsional (ADMIN_EMAILS) bila ingin membatasi kandidat.
  * Dipanggil dari route handler /api/admin/login.
  * TIDAK PERNAH melempar exception — selalu mengembalikan LoginResult.
  */
 export async function attemptLogin(
   emailRaw: string,
-  password: string
+  password: string,
+  pin: string
 ): Promise<LoginResult> {
   const dev = process.env.NODE_ENV !== "production";
   try {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !anonKey) {
+      // Diagnostik env BOLEH tampil di produksi — tidak membocorkan nilai.
+      const missing = [
+        !url ? "NEXT_PUBLIC_SUPABASE_URL" : null,
+        !anonKey ? "NEXT_PUBLIC_SUPABASE_ANON_KEY" : null,
+      ].filter(Boolean);
       return {
         ok: false,
         status: 500,
-        error: "Konfigurasi Supabase belum lengkap di server",
+        error: `Konfigurasi server belum lengkap: ${missing.join(", ")} tidak tersedia di ${dev ? ".env.local" : "environment deployment (Vercel)"}`,
         hint: dev
-          ? "Isi NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY di .env.local, lalu restart server."
-          : undefined,
+          ? "Isi variabel di .env.local, lalu restart server."
+          : "Vercel: Project → Settings → Environment Variables → tambahkan variabel tsb untuk Production, lalu Redeploy.",
       };
     }
 
+    // Whitelist opsional: hanya filter bila ADMIN_EMAILS diisi.
     const whitelist = (process.env.ADMIN_EMAILS ?? "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
-    if (whitelist.length === 0) {
-      return {
-        ok: false,
-        status: 503,
-        error: "Login admin nonaktif — ADMIN_EMAILS belum disetel",
-        hint: dev
-          ? 'Tambah di .env.local baris: ADMIN_EMAILS=youradmin@yourcafe.id — email harus SAMA dengan user Supabase Auth, lalu restart.'
-          : undefined,
-      };
-    }
 
     const cookieStore = await cookies();
     const supabase = createServerClient(url, anonKey, {
@@ -60,13 +61,42 @@ export async function attemptLogin(
     });
 
     if (error || !data.user?.email) {
+      // Log server penuh untuk Vercel logs; klien hanya pesan rapi.
+      console.error("[attemptLogin] supabase auth error:", error?.message);
       return { ok: false, status: 401, error: "Email atau kata sandi salah" };
     }
 
-    if (!whitelist.includes(data.user.email.toLowerCase())) {
+    if (
+      whitelist.length > 0 &&
+      !whitelist.includes(data.user.email.toLowerCase())
+    ) {
       // sah tapi bukan admin → keluarkan langsung
       await supabase.auth.signOut();
       return { ok: false, status: 403, error: "Akun ini bukan admin kasir" };
+    }
+
+    // Layer 2: PIN admin (server-side). Bingkai: pesan generik agar
+    // tidak konsisten terlihat mana layer yang gagal (katalis probing).
+    const adminPin = (process.env.ADMIN_PIN ?? "").trim();
+    if (!adminPin) {
+      return {
+        ok: false,
+        status: 503,
+        error: "AKSES ADMIN BELUM AKTIF — set ADMIN_PIN dulu",
+        hint: dev
+          ? "Tambahkan ADMIN_PIN=<6 digit> di .env.local, lalu restart; di Vercel tambahkan di Environment Variables lalu Redeploy."
+          : "Vercel: Settings → Environment Variables → ADMIN_PIN → Redeploy.",
+      };
+    }
+    if (pin.trim() !== adminPin) {
+      // Keluarkan sesi agar kombinasi (email benar, PIN salah) tak menyisakan
+      // sesi setengah-jalan
+      await supabase.auth.signOut();
+      return {
+        ok: false,
+        status: 401,
+        error: "PIN admin salah",
+      };
     }
 
     return { ok: true };
@@ -75,8 +105,11 @@ export async function attemptLogin(
     return {
       ok: false,
       status: 500,
-      error: "Kesalahan tak terduga saat login",
-      hint: dev ? `detail: ${String((err as Error)?.message ?? err)}` : undefined,
+      error: dev
+        ? `Kesalahan tak terduga saat login: ${String((err as Error)?.message ?? err)}`
+        // Produksi: sebutkan kategori error agar bisa ditindak, tanpa detail internal
+        : "Kesalahan tak terduga saat login — cek Vercel Function Logs.",
+      hint: dev ? undefined : "Vercel: Project → Deployments → Logs → cari [attemptLogin]",
     };
   }
 }

@@ -9,7 +9,7 @@ import { rateLimit } from "@/lib/rate-limit";
  * dengan rate limit 5 percobaan / 15 menit per (IP, email).
  */
 export async function POST(request: NextRequest) {
-  let body: { email?: string; password?: string };
+  let body: { email?: string; password?: string; pin?: string };
   try {
     body = await request.json();
   } catch {
@@ -31,7 +31,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await attemptLogin(email, body.password ?? "");
+  const result = await attemptLogin(
+    email,
+    body.password ?? "",
+    body.pin ?? ""
+  );
 
   if (!result.ok) {
     return Response.json(
