@@ -1,14 +1,25 @@
 import type { NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/payments/midtrans/charge
  * Membuat transaksi Snap Midtrans (QRIS) untuk pesanan yang sudah dibuat.
  *  - Harga total dibaca dari DB (bukan klien).
  *  - Server key TIDAK pernah keluar dari server.
+ *  - Rate-limit 6/5 menit/IP (anti spam charge Midtrans).
  * respons: { snapToken, redirectUrl? }
  */
 export async function POST(request: NextRequest) {
+  const ipKey =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
+  if (!rateLimit(`charge:${ipKey}`, 6, 5 * 60 * 1000)) {
+    return Response.json(
+      { error: "Terlalu banyak percobaan bayar — tunggu sebentar" },
+      { status: 429 }
+    );
+  }
+
   let body: { orderId?: string };
   try {
     body = await request.json();
