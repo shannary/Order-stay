@@ -14,6 +14,7 @@ import { formatRupiah } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { orderStatusMeta } from "@/lib/status-map";
 import { BackButton } from "@/components/catalog/back-button";
+import { AdminNav } from "@/components/admin/admin-nav";
 import { cn } from "@/lib/utils";
 
 type KdsItem = {
@@ -98,9 +99,10 @@ export function KdsClient() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-6xl bg-[#FBFBFA] p-4 pb-10 md:p-8">
-      <div className="mb-2">
+      <div className="mb-2 flex items-center justify-between">
         <BackButton fallbackHref="/admin/pos" label="Kembali ke Kasir" />
       </div>
+      <AdminNav />
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold text-[#18181B]">

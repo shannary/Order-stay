@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { QrStickerModal } from "@/components/admin/qr-sticker-modal";
 import { BackButton } from "@/components/catalog/back-button";
+import { AdminNav } from "@/components/admin/admin-nav";
 
 type Table = {
   id: string;
@@ -81,6 +82,7 @@ export function TablesAdminClient() {
       <div className="mb-2">
         <BackButton fallbackHref="/" label="Beranda" />
       </div>
+      <AdminNav />
       <header className="mb-6">
         <h1 className="text-lg font-bold text-[#18181B]">Admin · Meja</h1>
         <p className="text-xs text-zinc-500">

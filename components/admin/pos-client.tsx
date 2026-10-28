@@ -8,6 +8,7 @@ import { formatRupiah } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { orderStatusMeta } from "@/lib/status-map";
 import { BackButton } from "@/components/catalog/back-button";
+import { AdminNav } from "@/components/admin/admin-nav";
 import { cn } from "@/lib/utils";
 
 type PendingOrder = {
@@ -118,6 +119,7 @@ export function PosClient() {
       <div className="mb-2">
         <BackButton fallbackHref="/" label="Beranda" />
       </div>
+      <AdminNav />
       <header className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-[#18181B]">Kasir · POS</h1>
